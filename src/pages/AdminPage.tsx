@@ -1,222 +1,439 @@
-import { useState } from 'react';
-import { products } from '@/data/products';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from 'react';
+import { api } from '@/lib/api';
 import Icon from '@/components/ui/icon';
 
-const mockStats = [
-  { label: 'Выручка за месяц', value: '184 500₽', change: '+23%', icon: 'TrendingUp', color: '#00C9A7' },
-  { label: 'Заказов', value: '142', change: '+18%', icon: 'ShoppingBag', color: '#00A86B' },
-  { label: 'Товаров в каталоге', value: '28', change: '+5', icon: 'Package', color: '#FFB800' },
-  { label: 'Рейтинг', value: '4.9 ★', change: 'Топ 5%', icon: 'Star', color: '#FF6B2C' },
-];
+const ADMIN_EMAIL = 'admin@apsny.market';
+const ADMIN_PASSWORD = 'admin2024';
 
-const tabs = ['Дашборд', 'Товары', 'Заказы', 'Настройки'];
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  processing:  { label: 'Обрабатывается', color: '#FF6B2C' },
+  assembly:    { label: 'Собирается',     color: '#FFB800' },
+  transit:     { label: 'В пути',         color: '#00A86B' },
+  delivered:   { label: 'Доставлен',      color: '#00C9A7' },
+  cancelled:   { label: 'Отменён',        color: '#ef4444' },
+};
+
+type Tab = 'dashboard' | 'products' | 'orders' | 'sellers' | 'users';
 
 export default function AdminPage() {
-  const [activeTab, setActiveTab] = useState(0);
-  const [registered, setRegistered] = useState(false);
-  const [form, setForm] = useState({ shopName: '', category: '', description: '', phone: '', email: '' });
+  const [authed, setAuthed] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPass, setLoginPass]  = useState('');
+  const [loginErr, setLoginErr]    = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
 
-  if (!registered) {
+  const [tab, setTab] = useState<Tab>('dashboard');
+   
+  const [stats, setStats]     = useState<any>(null);
+   
+  const [products, setProducts] = useState<any[]>([]);
+   
+  const [orders, setOrders]   = useState<any[]>([]);
+   
+  const [sellers, setSellers] = useState<any[]>([]);
+   
+  const [users, setUsers]     = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [newProduct, setNewProduct] = useState({ name:'', price:'', category_slug:'food', region:'Сухум', description:'', image_url:'', badge:'', badge_type:'', in_stock: true });
+  const [addLoading, setAddLoading] = useState(false);
+  const [addMsg, setAddMsg] = useState('');
+
+  const handleLogin = async () => {
+    if (!loginEmail || !loginPass) { setLoginErr('Введите email и пароль'); return; }
+    setLoginLoading(true);
+    try {
+      const res = await api.login(loginEmail.trim().toLowerCase(), loginPass);
+      if (res.user && res.user.role === 'admin') {
+        setAuthed(true);
+        setLoginErr('');
+      } else if (res.error) {
+        setLoginErr(res.error);
+      } else {
+        setLoginErr('Недостаточно прав. Только администраторы.');
+      }
+    } catch {
+      setLoginErr('Ошибка соединения');
+    }
+    setLoginLoading(false);
+  };
+
+  useEffect(() => {
+    if (!authed) return;
+    setLoading(true);
+    api.admin.getStats().then(setStats).finally(() => setLoading(false));
+  }, [authed]);
+
+  useEffect(() => {
+    if (!authed) return;
+    if (tab === 'products') api.admin.getProducts().then(setProducts);
+    if (tab === 'orders')   api.admin.getOrders().then(setOrders);
+    if (tab === 'sellers')  api.admin.getSellers().then(setSellers);
+    if (tab === 'users')    api.admin.getUsers().then(setUsers);
+  }, [tab, authed]);
+
+  const updateOrderStatus = async (orderId: number, status: string) => {
+    await api.admin.updateOrderStatus(orderId, status);
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  };
+
+  const handleAddProduct = async () => {
+    if (!newProduct.name || !newProduct.price) { setAddMsg('Заполните название и цену'); return; }
+    setAddLoading(true);
+    const res = await api.createProduct({ ...newProduct, price: parseFloat(newProduct.price) });
+    if (res.id) {
+      setAddMsg('✅ Товар добавлен!');
+      setProducts(prev => [res, ...prev]);
+      setNewProduct({ name:'', price:'', category_slug:'food', region:'Сухум', description:'', image_url:'', badge:'', badge_type:'', in_stock: true });
+      setTimeout(() => { setAddMsg(''); setShowAddProduct(false); }, 2000);
+    } else {
+      setAddMsg('Ошибка: ' + (res.error || 'неизвестная'));
+    }
+    setAddLoading(false);
+  };
+
+  if (!authed) {
     return (
-      <div className="max-w-2xl mx-auto px-4 py-16">
-        <div className="rounded-3xl p-8" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+      <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(135deg, #060E1C 0%, #0A1628 100%)' }}>
+        <div className="w-full max-w-md">
+          {/* Logo */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl" style={{ background: 'linear-gradient(135deg, #FF6B2C, #FFB800)' }}>
-              🏪
+            <div className="w-20 h-20 rounded-3xl flex items-center justify-center mx-auto mb-4 text-4xl" style={{ background: 'linear-gradient(135deg, #00A86B, #00C9A7)', boxShadow: '0 0 40px rgba(0,200,167,0.3)' }}>
+              👑
             </div>
-            <h1 className="font-montserrat font-black text-white text-2xl mb-2">Открыть магазин</h1>
-            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
-              Продавайте на АПСНЫ — первом маркетплейсе Абхазии
-            </p>
+            <h1 className="font-montserrat font-black text-white text-3xl">Админ-панель</h1>
+            <p className="mt-1 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>АПСНЫ Маркетплейс · Только для администраторов</p>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mb-8">
-            {[['1%', 'комиссия'], ['1 день', 'верификация'], ['150+', 'продавцов']].map(([n, l]) => (
-              <div key={l} className="text-center p-3 rounded-xl" style={{ background: 'rgba(255,107,44,0.08)', border: '1px solid rgba(255,107,44,0.15)' }}>
-                <div className="font-montserrat font-black text-2xl" style={{ color: '#FF6B2C' }}>{n}</div>
-                <div className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>{l}</div>
+          <div className="rounded-3xl p-8" style={{ background: 'rgba(13,33,55,0.9)', border: '1px solid rgba(0,200,167,0.15)', boxShadow: '0 0 60px rgba(0,0,0,0.4)' }}>
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'rgba(255,255,255,0.5)' }}>Email администратора</label>
+                <input type="email" placeholder="admin@apsny.market" value={loginEmail}
+                  onChange={e => setLoginEmail(e.target.value)} className="input-dark" />
               </div>
-            ))}
-          </div>
-
-          <div className="space-y-4">
-            {[
-              { key: 'shopName', label: 'Название магазина', placeholder: 'Например: Горные пасеки Гудауты' },
-              { key: 'category', label: 'Основная категория', placeholder: 'Продукты, вина, ремёсла...' },
-              { key: 'phone', label: 'Телефон', placeholder: '+7 (840) ...' },
-              { key: 'email', label: 'Email', placeholder: 'your@email.com' },
-            ].map(f => (
-              <div key={f.key}>
-                <label className="text-xs font-medium mb-1.5 block" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.label}</label>
-                <input
-                  type="text"
-                  placeholder={f.placeholder}
-                  value={form[f.key as keyof typeof form]}
-                  onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  className="input-dark"
-                />
+              <div>
+                <label className="text-xs font-semibold mb-1.5 block" style={{ color: 'rgba(255,255,255,0.5)' }}>Пароль</label>
+                <input type="password" placeholder="••••••••" value={loginPass}
+                  onChange={e => setLoginPass(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleLogin()}
+                  className="input-dark" />
               </div>
-            ))}
-            <div>
-              <label className="text-xs font-medium mb-1.5 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Описание</label>
-              <textarea
-                placeholder="Расскажите о вашем магазине..."
-                value={form.description}
-                onChange={e => setForm({ ...form, description: e.target.value })}
-                rows={3}
-                className="input-dark resize-none"
-              />
+              {loginErr && (
+                <div className="text-sm px-3 py-2 rounded-xl" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  {loginErr}
+                </div>
+              )}
+              <button onClick={handleLogin} disabled={loginLoading} className="btn-primary w-full py-3.5 text-base flex items-center justify-center gap-2">
+                {loginLoading ? <><Icon name="Loader" size={18} className="animate-spin text-white" /> Вход...</> : <><Icon name="Lock" size={18} className="text-white" /> Войти в панель</>}
+              </button>
             </div>
-            <button
-              onClick={() => form.shopName && setRegistered(true)}
-              className="btn-orange w-full py-3 text-base"
-            >
-              Подать заявку
-            </button>
-            <p className="text-center text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
-              Нажимая кнопку, вы соглашаетесь с условиями работы платформы
-            </p>
+
+            <div className="mt-6 p-4 rounded-xl text-xs" style={{ background: 'rgba(0,200,167,0.06)', border: '1px solid rgba(0,200,167,0.1)', color: 'rgba(255,255,255,0.4)' }}>
+              <p className="font-semibold mb-1" style={{ color: 'rgba(0,200,167,0.8)' }}>Тестовый доступ:</p>
+              <p>Email: {ADMIN_EMAIL}</p>
+              <p>Пароль: {ADMIN_PASSWORD}</p>
+            </div>
           </div>
         </div>
       </div>
     );
   }
 
+  const tabs: { key: Tab; label: string; icon: string }[] = [
+    { key: 'dashboard', label: 'Дашборд',  icon: 'LayoutDashboard' },
+    { key: 'products',  label: 'Товары',   icon: 'Package' },
+    { key: 'orders',    label: 'Заказы',   icon: 'ShoppingBag' },
+    { key: 'sellers',   label: 'Продавцы', icon: 'Store' },
+    { key: 'users',     label: 'Пользователи', icon: 'Users' },
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-montserrat font-black text-white text-2xl">Панель продавца</h1>
-          <p className="text-sm mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{form.shopName || 'Мой магазин'}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="tag-badge flex items-center gap-1" style={{ color: '#FFB800', background: 'rgba(255,184,0,0.1)', borderColor: 'rgba(255,184,0,0.2)' }}>
-            <Icon name="Clock" size={11} />
-            На верификации
+    <div className="min-h-screen" style={{ background: '#060E1C' }}>
+      {/* Admin Header */}
+      <div className="sticky top-0 z-40 border-b" style={{ background: 'rgba(6,14,28,0.96)', backdropFilter: 'blur(20px)', borderColor: 'rgba(0,200,167,0.12)' }}>
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: 'linear-gradient(135deg, #00A86B, #00C9A7)' }}>👑</div>
+            <span className="font-montserrat font-bold text-white">Панель администратора</span>
+            <span className="tag-badge hidden md:inline-flex">АПСНЫ</span>
           </div>
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-        {tabs.map((tab, i) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(i)}
-            className="flex-1 py-2 text-sm font-medium rounded-lg transition-all"
-            style={{
-              background: activeTab === i ? 'linear-gradient(135deg, #00A86B, #00C9A7)' : 'transparent',
-              color: activeTab === i ? 'white' : 'rgba(255,255,255,0.45)',
-            }}
-          >
-            {tab}
+          <button onClick={() => setAuthed(false)} className="flex items-center gap-1.5 text-sm transition-colors hover:text-white" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            <Icon name="LogOut" size={15} />
+            Выйти
           </button>
-        ))}
+        </div>
       </div>
 
-      {/* Dashboard */}
-      {activeTab === 0 && (
-        <div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            {mockStats.map(stat => (
-              <div key={stat.label} className="rounded-2xl p-5" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div className="flex items-center justify-between mb-3">
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: `${stat.color}15` }}>
-                    <Icon name={stat.icon as 'TrendingUp'} size={18} style={{ color: stat.color }} />
-                  </div>
-                  <span className="text-xs font-semibold" style={{ color: '#00C9A7' }}>{stat.change}</span>
-                </div>
-                <div className="font-montserrat font-black text-xl text-white">{stat.value}</div>
-                <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{stat.label}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Chart placeholder */}
-          <div className="rounded-2xl p-6 mb-6" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-            <h3 className="font-montserrat font-bold text-white mb-4">Продажи за 30 дней</h3>
-            <div className="flex items-end gap-1 h-32">
-              {[40,65,45,80,55,90,70,85,60,95,75,88,50,72,65,80,55,90,68,78,85,70,92,65,80,88,75,95,70,85].map((h, i) => (
-                <div
-                  key={i}
-                  className="flex-1 rounded-t-sm transition-all hover:opacity-80 cursor-pointer"
-                  style={{
-                    height: `${h}%`,
-                    background: i > 25 ? 'linear-gradient(to top, #00A86B, #00C9A7)' : 'rgba(0,200,167,0.25)',
-                  }}
-                />
-              ))}
-            </div>
-            <div className="flex justify-between mt-2 text-xs" style={{ color: 'rgba(255,255,255,0.25)' }}>
-              <span>1 мая</span><span>15 мая</span><span>Сегодня</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Products */}
-      {activeTab === 1 && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-montserrat font-bold text-white text-lg">Мои товары</h2>
-            <button className="btn-primary text-sm py-2 px-4 flex items-center gap-2">
-              <Icon name="Plus" size={15} className="text-white" />
-              Добавить товар
+      <div className="max-w-7xl mx-auto px-4 py-6">
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 overflow-x-auto scrollbar-hidden pb-1">
+          {tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all flex-shrink-0"
+              style={{
+                background: tab === t.key ? 'linear-gradient(135deg, #00A86B, #00C9A7)' : 'rgba(255,255,255,0.04)',
+                color: tab === t.key ? 'white' : 'rgba(255,255,255,0.5)',
+                border: `1px solid ${tab === t.key ? 'transparent' : 'rgba(255,255,255,0.06)'}`,
+              }}>
+              <Icon name={t.icon as 'Package'} size={15} />
+              {t.label}
             </button>
+          ))}
+        </div>
+
+        {/* ===== DASHBOARD ===== */}
+        {tab === 'dashboard' && (
+          <div>
+            {loading || !stats ? (
+              <div className="text-center py-20" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка статистики...</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+                  {[
+                    { label: 'Выручка', value: `${Number(stats.revenue).toLocaleString()}₽`, icon: 'TrendingUp', color: '#00C9A7' },
+                    { label: 'Заказов',  value: stats.orders,    icon: 'ShoppingBag', color: '#00A86B' },
+                    { label: 'Товаров',  value: stats.products,  icon: 'Package',     color: '#FFB800' },
+                    { label: 'Продавцов',value: stats.sellers,   icon: 'Store',       color: '#FF6B2C' },
+                    { label: 'Покупателей',value: stats.users,   icon: 'Users',       color: '#a78bfa' },
+                  ].map(s => (
+                    <div key={s.label} className="rounded-2xl p-5" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center mb-3" style={{ background: `${s.color}15` }}>
+                        <Icon name={s.icon as 'TrendingUp'} size={18} style={{ color: s.color }} />
+                      </div>
+                      <div className="font-montserrat font-black text-2xl text-white">{s.value}</div>
+                      <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Recent orders */}
+                <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255,255,255,0.05)' }}>
+                    <h3 className="font-montserrat font-bold text-white">Последние заказы</h3>
+                    <button onClick={() => setTab('orders')} className="text-xs" style={{ color: '#00C9A7' }}>Все заказы →</button>
+                  </div>
+                  <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                    { }
+                    {(stats.recent_orders || []).map((o: any) => {
+                      const st = STATUS_MAP[o.status] || STATUS_MAP.processing;
+                      return (
+                        <div key={o.id} className="px-5 py-3 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-white">{o.order_number}</p>
+                            <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{o.user_name || '—'} · {o.delivery_region}</p>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <span className="font-bold text-sm" style={{ color: '#00C9A7' }}>{Number(o.total_price).toLocaleString()}₽</span>
+                            <span className="text-xs px-2 py-1 rounded-lg" style={{ background: `${st.color}15`, color: st.color }}>{st.label}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
-          <div className="space-y-2">
-            {products.slice(0, 5).map(p => (
-              <div key={p.id} className="flex items-center gap-4 p-4 rounded-2xl" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-white text-sm truncate">{p.name}</p>
-                  <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>★ {p.rating} · {p.reviews} отзывов</p>
+        )}
+
+        {/* ===== PRODUCTS ===== */}
+        {tab === 'products' && (
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-montserrat font-bold text-white text-xl">Все товары ({products.length})</h2>
+              <button onClick={() => setShowAddProduct(!showAddProduct)} className="btn-primary text-sm py-2 px-4 flex items-center gap-2">
+                <Icon name="Plus" size={15} className="text-white" />
+                Добавить товар
+              </button>
+            </div>
+
+            {/* Add product form */}
+            {showAddProduct && (
+              <div className="rounded-2xl p-6 mb-4 animate-fade-in" style={{ background: 'rgba(0,200,167,0.05)', border: '1px solid rgba(0,200,167,0.2)' }}>
+                <h3 className="font-montserrat font-bold text-white mb-4">Новый товар</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="md:col-span-2">
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Название *</label>
+                    <input value={newProduct.name} onChange={e => setNewProduct(p => ({...p, name: e.target.value}))} placeholder="Название товара" className="input-dark" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Цена (₽) *</label>
+                    <input type="number" value={newProduct.price} onChange={e => setNewProduct(p => ({...p, price: e.target.value}))} placeholder="0" className="input-dark" />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Категория</label>
+                    <select value={newProduct.category_slug} onChange={e => setNewProduct(p => ({...p, category_slug: e.target.value}))} className="input-dark">
+                      {['food','wine','honey','crafts','textiles','cosmetics','tea','tourism','electronics','clothing','shoes','kids','sport','home','beauty','books'].map(c => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Регион</label>
+                    <select value={newProduct.region} onChange={e => setNewProduct(p => ({...p, region: e.target.value}))} className="input-dark">
+                      {['Сухум','Гудаута','Гагра','Гал','Очамчира','Новый Афон','Пицунда'].map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Метка (badge)</label>
+                    <input value={newProduct.badge} onChange={e => setNewProduct(p => ({...p, badge: e.target.value}))} placeholder="Хит продаж" className="input-dark" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>URL изображения</label>
+                    <input value={newProduct.image_url} onChange={e => setNewProduct(p => ({...p, image_url: e.target.value}))} placeholder="https://..." className="input-dark" />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="text-xs font-medium mb-1 block" style={{ color: 'rgba(255,255,255,0.45)' }}>Описание</label>
+                    <textarea value={newProduct.description} onChange={e => setNewProduct(p => ({...p, description: e.target.value}))} placeholder="Описание товара..." rows={2} className="input-dark resize-none" />
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="font-bold" style={{ color: '#00C9A7' }}>{p.price.toLocaleString()}₽</div>
-                  <div className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>В наличии</div>
-                </div>
-                <div className="flex gap-1">
-                  <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10 transition-all">
-                    <Icon name="Edit2" size={14} style={{ color: 'rgba(255,255,255,0.5)' }} />
+                {addMsg && <p className="mt-2 text-sm" style={{ color: addMsg.startsWith('✅') ? '#00C9A7' : '#ef4444' }}>{addMsg}</p>}
+                <div className="flex gap-3 mt-4">
+                  <button onClick={handleAddProduct} disabled={addLoading} className="btn-primary py-2 px-6 flex items-center gap-2">
+                    {addLoading ? <Icon name="Loader" size={15} className="animate-spin text-white" /> : <Icon name="Plus" size={15} className="text-white" />}
+                    Сохранить
                   </button>
-                  <button className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/20 transition-all">
-                    <Icon name="Trash2" size={14} style={{ color: 'rgba(255,100,100,0.5)' }} />
-                  </button>
+                  <button onClick={() => setShowAddProduct(false)} className="px-4 py-2 rounded-xl text-sm transition-all hover:bg-white/10" style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>Отмена</button>
                 </div>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* Orders */}
-      {activeTab === 2 && (
-        <div className="text-center py-12">
-          <div className="text-4xl mb-3">📦</div>
-          <p className="text-white font-semibold mb-1">Заказы появятся после верификации</p>
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Обычно верификация занимает 1-3 рабочих дня</p>
-        </div>
-      )}
-
-      {/* Settings */}
-      {activeTab === 3 && (
-        <div className="max-w-lg space-y-4">
-          <h2 className="font-montserrat font-bold text-white text-lg mb-4">Настройки магазина</h2>
-          {[
-            { label: 'Название магазина', defaultVal: form.shopName || 'Мой магазин' },
-            { label: 'Телефон', defaultVal: form.phone },
-            { label: 'Email', defaultVal: form.email },
-          ].map(f => (
-            <div key={f.label}>
-              <label className="text-xs font-medium mb-1.5 block" style={{ color: 'rgba(255,255,255,0.45)' }}>{f.label}</label>
-              <input defaultValue={f.defaultVal} className="input-dark" />
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                {products.slice(0, 50).map((p: any) => (
+                  <div key={p.id} className="px-5 py-3 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                      {p.image_url && <img src={p.image_url} alt="" className="w-full h-full object-cover" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-white text-sm truncate">{p.name}</p>
+                      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{p.category_slug} · {p.seller_name || '—'} · {p.region}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="font-bold" style={{ color: '#00C9A7' }}>{Number(p.price).toLocaleString()}₽</div>
+                      <div className="text-xs mt-0.5" style={{ color: p.in_stock ? '#00A86B' : '#ef4444' }}>{p.in_stock ? 'В наличии' : 'Нет'}</div>
+                    </div>
+                    {p.badge && <span className="tag-badge flex-shrink-0 hidden md:inline">{p.badge}</span>}
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-          <button className="btn-primary py-2.5 px-6">Сохранить</button>
-        </div>
-      )}
+          </div>
+        )}
+
+        {/* ===== ORDERS ===== */}
+        {tab === 'orders' && (
+          <div>
+            <h2 className="font-montserrat font-bold text-white text-xl mb-4">Все заказы ({orders.length})</h2>
+            <div className="space-y-3">
+              {orders.map((o: any) => {
+                const st = STATUS_MAP[o.status] || STATUS_MAP.processing;
+                return (
+                  <div key={o.id} className="rounded-2xl p-5" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+                      <div>
+                        <p className="font-montserrat font-bold text-white">{o.order_number}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                          {o.user_name || 'Аноним'} · {o.user_email || ''} · 📍 {o.delivery_region}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="font-bold" style={{ color: '#00C9A7' }}>{Number(o.total_price).toLocaleString()}₽</span>
+                        <select
+                          value={o.status}
+                          onChange={e => updateOrderStatus(o.id, e.target.value)}
+                          className="text-xs px-3 py-1.5 rounded-lg border-none outline-none cursor-pointer"
+                          style={{ background: `${st.color}15`, color: st.color, border: `1px solid ${st.color}30` }}
+                        >
+                          {Object.entries(STATUS_MAP).map(([k, v]) => (
+                            <option key={k} value={k}>{v.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    {o.items && o.items.length > 0 && (
+                      <div className="text-xs space-y-1 pt-2 border-t" style={{ borderColor: 'rgba(255,255,255,0.04)', color: 'rgba(255,255,255,0.45)' }}>
+                        {o.items.map((item: any) => (
+                          <div key={item.id} className="flex justify-between">
+                            <span>{item.product_name} × {item.quantity}</span>
+                            <span>{(Number(item.price) * item.quantity).toLocaleString()}₽</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-xs mt-2" style={{ color: 'rgba(255,255,255,0.25)' }}>
+                      Трек: {o.tracking_code} · Адрес: {o.delivery_address || '—'}
+                    </p>
+                  </div>
+                );
+              })}
+              {orders.length === 0 && (
+                <div className="text-center py-12" style={{ color: 'rgba(255,255,255,0.35)' }}>Заказов ещё нет</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ===== SELLERS ===== */}
+        {tab === 'sellers' && (
+          <div>
+            <h2 className="font-montserrat font-bold text-white text-xl mb-4">Продавцы ({sellers.length})</h2>
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                {sellers.map((s: any) => (
+                  <div key={s.id} className="px-5 py-4 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{ background: 'rgba(255,255,255,0.05)' }}>{s.avatar}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-white">{s.name}</p>
+                        {s.verified && <span className="tag-badge text-xs py-0">✓</span>}
+                      </div>
+                      <p className="text-xs truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.email} · 📍 {s.location}</p>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div style={{ color: '#FFB800' }}>★ {Number(s.rating).toFixed(1)}</div>
+                      <div className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{s.products_count} товаров</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ===== USERS ===== */}
+        {tab === 'users' && (
+          <div>
+            <h2 className="font-montserrat font-bold text-white text-xl mb-4">Пользователи ({users.length})</h2>
+            <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+              <div className="divide-y" style={{ borderColor: 'rgba(255,255,255,0.04)' }}>
+                {users.map((u: any) => (
+                  <div key={u.id} className="px-5 py-3 flex items-center gap-4">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0" style={{ background: 'rgba(255,255,255,0.05)' }}>{u.avatar}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-white text-sm">{u.name}</p>
+                      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{u.email} · {u.phone || '—'}</p>
+                    </div>
+                    <div className="flex-shrink-0">
+                      <span className={`tag-badge text-xs ${u.role === 'admin' ? 'tag-gold' : u.role === 'seller' ? '' : ''}`}>
+                        {u.role === 'admin' ? '👑 admin' : u.role === 'seller' ? '🏪 seller' : '👤 user'}
+                      </span>
+                    </div>
+                    <div className="text-xs flex-shrink-0" style={{ color: 'rgba(255,255,255,0.3)' }}>
+                      {new Date(u.created_at).toLocaleDateString('ru')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

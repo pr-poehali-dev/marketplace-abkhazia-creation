@@ -1,19 +1,51 @@
-import { useState } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { products } from '@/data/products';
+import { api } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import Icon from '@/components/ui/icon';
 
+const mapProduct = (p: any) => ({
+  id: p.id as number,
+  name: p.name as string,
+  price: Number(p.price),
+  oldPrice: p.old_price ? Number(p.old_price) : undefined,
+  rating: Number(p.rating),
+  reviews: p.reviews_count as number,
+  category: p.category_slug as string,
+  seller: (p.seller_name as string) || '',
+  sellerId: p.seller_id as number,
+  image: p.image_url as string,
+  badge: p.badge as string | undefined,
+  badgeType: p.badge_type as 'green' | 'orange' | 'gold' | undefined,
+  region: p.region as string,
+  inStock: p.in_stock as boolean,
+  description: (p.description as string) || '',
+  tags: (p.tags as string[]) || [],
+});
+
 export default function ProductPage() {
-  const { selectedProduct, addToCart, toggleBookmark, bookmarks, setPage, setSelectedProduct, setCartOpen } = useStore();
+  const { selectedProduct, addToCart, toggleBookmark, bookmarks, setPage, setCartOpen } = useStore();
   const [qty, setQty] = useState(1);
   const [activeTab, setActiveTab] = useState<'desc' | 'delivery' | 'reviews'>('desc');
+  const [related, setRelated] = useState<ReturnType<typeof mapProduct>[]>([]);
+
+  useEffect(() => {
+    if (!selectedProduct) return;
+    api.getProducts({ limit: '4', sort: 'popular' })
+      .then(data => {
+        const prods = Array.isArray(data) ? data : (data.products || []);
+        const mapped = (prods as any[]).map(mapProduct).filter(
+          (r: ReturnType<typeof mapProduct>) => r.category === selectedProduct.category && r.id !== selectedProduct.id
+        ).slice(0, 4);
+        setRelated(mapped);
+      });
+  }, [selectedProduct]);
 
   if (!selectedProduct) { setPage('catalog'); return null; }
 
   const p = selectedProduct;
   const isBookmarked = bookmarks.includes(p.id);
-  const related = products.filter(r => r.category === p.category && r.id !== p.id).slice(0, 4);
 
   const handleBuy = () => {
     for (let i = 0; i < qty; i++) addToCart(p);

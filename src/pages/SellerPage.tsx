@@ -1,14 +1,76 @@
+import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { sellers, products } from '@/data/products';
+import { api } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import Icon from '@/components/ui/icon';
 
+interface ApiSeller {
+  id: number;
+  name: string;
+  avatar: string;
+  description: string;
+  location: string;
+  phone?: string;
+  email?: string;
+  rating: number;
+  reviews_count: number;
+  products_count: number;
+  verified: boolean;
+  join_year: number;
+}
+
+const mapProduct = (p: Record<string, unknown>) => ({
+  id: p.id as number,
+  name: p.name as string,
+  price: Number(p.price),
+  oldPrice: p.old_price ? Number(p.old_price) : undefined,
+  rating: Number(p.rating),
+  reviews: p.reviews_count as number,
+  category: p.category_slug as string,
+  seller: (p.seller_name as string) || '',
+  sellerId: p.seller_id as number,
+  image: p.image_url as string,
+  badge: p.badge as string | undefined,
+  badgeType: p.badge_type as 'green' | 'orange' | 'gold' | undefined,
+  region: p.region as string,
+  inStock: p.in_stock as boolean,
+  description: (p.description as string) || '',
+  tags: (p.tags as string[]) || [],
+});
+
 export default function SellerPage() {
   const { selectedSellerId, setPage } = useStore();
-  const seller = sellers.find(s => s.id === selectedSellerId);
-  const sellerProducts = products.filter(p => p.sellerId === selectedSellerId);
+  const [seller, setSeller] = useState<ApiSeller | null>(null);
+  const [sellerProducts, setSellerProducts] = useState<ReturnType<typeof mapProduct>[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  if (!seller) { setPage('sellers'); return null; }
+  useEffect(() => {
+    if (!selectedSellerId) { setPage('sellers'); return; }
+    Promise.all([
+      api.getSeller(selectedSellerId),
+      api.getProducts({ seller_id: String(selectedSellerId) }),
+    ])
+      .then(([sellerData, prodData]) => {
+        const s = sellerData.seller || sellerData;
+        setSeller(s as ApiSeller);
+        const prods = Array.isArray(prodData) ? prodData : (prodData.products || []);
+        setSellerProducts((prods as Record<string, unknown>[]).map(mapProduct));
+      })
+      .finally(() => setLoading(false));
+  }, [selectedSellerId, setPage]);
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+      </div>
+    );
+  }
+
+  if (!seller) {
+    setPage('sellers');
+    return null;
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -37,13 +99,13 @@ export default function SellerPage() {
             <p className="text-sm mb-4" style={{ color: 'rgba(255,255,255,0.55)' }}>{seller.description}</p>
             <div className="flex flex-wrap gap-6 text-sm">
               {[
-                ['★ ' + seller.rating, seller.reviews + ' отзывов', '#FFB800'],
+                ['★ ' + seller.rating, seller.reviews_count + ' отзывов', '#FFB800'],
                 ['📍 ' + seller.location, 'Регион', 'rgba(255,255,255,0.6)'],
-                [seller.productsCount + ' товаров', 'В каталоге', '#00C9A7'],
-                ['С ' + seller.joinDate + ' года', 'На платформе', 'rgba(255,255,255,0.6)'],
+                [seller.products_count + ' товаров', 'В каталоге', '#00C9A7'],
+                ['С ' + seller.join_year + ' года', 'На платформе', 'rgba(255,255,255,0.6)'],
               ].map(([main, sub, color]) => (
-                <div key={main}>
-                  <div className="font-bold" style={{ color }}>{main}</div>
+                <div key={main as string}>
+                  <div className="font-bold" style={{ color: color as string }}>{main}</div>
                   <div className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>{sub}</div>
                 </div>
               ))}

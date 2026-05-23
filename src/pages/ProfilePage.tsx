@@ -1,12 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '@/store/useStore';
+import { api } from '@/lib/api';
 import Icon from '@/components/ui/icon';
-
-const mockOrders = [
-  { id: '#AB-2024-0892', date: '18.05.2024', status: 'delivered', items: ['Вино «Лыхны»', 'Мёд горный'], total: 1540, region: 'Сухум' },
-  { id: '#AB-2024-0781', date: '10.05.2024', status: 'transit', items: ['Аджика абхазская'], total: 320, region: 'Гудаута' },
-  { id: '#AB-2024-0654', date: '02.05.2024', status: 'processing', items: ['Чай «Рица»', 'Варенье из инжира'], total: 860, region: 'Гагра' },
-];
 
 const statusMap: Record<string, { label: string; color: string; icon: string }> = {
   delivered: { label: 'Доставлен', color: '#00C9A7', icon: 'CheckCircle' },
@@ -15,16 +10,75 @@ const statusMap: Record<string, { label: string; color: string; icon: string }> 
 };
 
 export default function ProfilePage() {
-  const { isLoggedIn, user, login, logout, setPage } = useStore();
+  const { isLoggedIn, user, logout, setPage, cartItems, clearCart } = useStore();
   const [activeTab, setActiveTab] = useState<'info' | 'orders' | 'addresses'>('info');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [orders, setOrders] = useState<Record<string, unknown>[]>([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
+  const [orderLoading, setOrderLoading] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
+  const [orderError, setOrderError] = useState('');
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     if (!email) { setLoginError('Введите email'); return; }
-    login(email, password);
+    setLoginLoading(true);
     setLoginError('');
+    try {
+      const result = await api.login(email, password);
+      if (result.error) {
+        setLoginError(result.error);
+      } else if (result.user) {
+        useStore.getState().setUser(result.user);
+      } else {
+        setLoginError('Неверный email или пароль');
+      }
+    } catch {
+      setLoginError('Ошибка соединения');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleTabChange = async (tab: 'info' | 'orders' | 'addresses') => {
+    setActiveTab(tab);
+    if (tab === 'orders' && !ordersLoaded && user) {
+      try {
+        const data = await api.getUserOrders(user.id);
+        const list = Array.isArray(data) ? data : (data.orders || []);
+        setOrders(list as Record<string, unknown>[]);
+      } catch {
+        setOrders([]);
+      } finally {
+        setOrdersLoaded(true);
+      }
+    }
+  };
+
+  const handleCreateOrder = async () => {
+    if (cartItems.length === 0) return;
+    setOrderLoading(true);
+    setOrderError('');
+    try {
+      const result = await api.createOrder({
+        user_id: user?.id,
+        items: cartItems.map(i => ({ product_id: i.product.id, quantity: i.quantity, price: i.product.price })),
+        total: cartItems.reduce((s, i) => s + i.product.price * i.quantity, 0),
+      });
+      if (result.error) {
+        setOrderError(result.error);
+      } else {
+        clearCart();
+        setOrderSuccess(true);
+        setOrdersLoaded(false);
+      }
+    } catch {
+      setOrderError('Ошибка при оформлении заказа');
+    } finally {
+      setOrderLoading(false);
+    }
   };
 
   if (!isLoggedIn) {
@@ -62,8 +116,8 @@ export default function ProfilePage() {
               />
             </div>
             {loginError && <p className="text-xs text-red-400">{loginError}</p>}
-            <button onClick={handleLogin} className="btn-primary w-full py-3 text-base">
-              Войти
+            <button onClick={handleLogin} disabled={loginLoading} className="btn-primary w-full py-3 text-base">
+              {loginLoading ? 'Вход...' : 'Войти'}
             </button>
             <p className="text-center text-sm" style={{ color: 'rgba(255,255,255,0.35)' }}>
               Нет аккаунта?{' '}
@@ -83,7 +137,7 @@ export default function ProfilePage() {
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl" style={{ background: 'linear-gradient(135deg, #00A86B, #00C9A7)' }}>
-            {user?.avatar}
+            {user?.avatar || '👤'}
           </div>
           <div>
             <h1 className="font-montserrat font-bold text-white text-2xl">{user?.name}</h1>
@@ -100,12 +154,33 @@ export default function ProfilePage() {
         </button>
       </div>
 
+      {/* Cart checkout block */}
+      {cartItems.length > 0 && (
+        <div className="rounded-2xl p-5 mb-6" style={{ background: 'rgba(0,168,107,0.08)', border: '1px solid rgba(0,200,167,0.2)' }}>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <p className="font-semibold text-white mb-1">Товары в корзине: {cartItems.length} поз.</p>
+              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                Итого: <span style={{ color: '#00C9A7' }}>{cartItems.reduce((s, i) => s + i.product.price * i.quantity, 0).toLocaleString()}₽</span>
+              </p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              {orderSuccess && <p className="text-xs" style={{ color: '#00C9A7' }}>Заказ успешно оформлен!</p>}
+              {orderError && <p className="text-xs text-red-400">{orderError}</p>}
+              <button onClick={handleCreateOrder} disabled={orderLoading} className="btn-primary px-6 py-2.5">
+                {orderLoading ? 'Оформление...' : 'Оформить заказ'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="flex gap-2 mb-6 border-b" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
         {[['info', 'Профиль'], ['orders', 'Заказы'], ['addresses', 'Адреса']].map(([tab, label]) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab as 'info' | 'orders' | 'addresses')}
+            onClick={() => handleTabChange(tab as 'info' | 'orders' | 'addresses')}
             className="px-5 py-3 text-sm font-medium transition-all -mb-px"
             style={{
               color: activeTab === tab ? '#00C9A7' : 'rgba(255,255,255,0.45)',
@@ -159,39 +234,52 @@ export default function ProfilePage() {
 
       {activeTab === 'orders' && (
         <div className="space-y-4">
-          {mockOrders.map(order => {
-            const st = statusMap[order.status];
-            return (
-              <div key={order.id} className="rounded-2xl p-5" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="font-montserrat font-bold text-white">{order.id}</p>
-                    <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>{order.date} · 📍 {order.region}</p>
+          {!ordersLoaded ? (
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+          ) : orders.length === 0 ? (
+            <div className="text-center py-12" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              <div className="text-4xl mb-3">📦</div>
+              <p>У вас пока нет заказов</p>
+            </div>
+          ) : (
+            orders.map(order => {
+              const status = (order.status as string) || 'processing';
+              const st = statusMap[status] || statusMap.processing;
+              const items = (order.items as { name?: string; product_name?: string }[]) || [];
+              return (
+                <div key={order.id as string} className="rounded-2xl p-5" style={{ background: 'rgba(13,33,55,0.8)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-montserrat font-bold text-white">#{order.id as string}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                        {order.created_at as string} · 📍 {(order.region as string) || ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold" style={{ background: `${st.color}15`, color: st.color, border: `1px solid ${st.color}30` }}>
+                      <Icon name={st.icon as 'CheckCircle'} size={12} />
+                      {st.label}
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold" style={{ background: `${st.color}15`, color: st.color, border: `1px solid ${st.color}30` }}>
-                    <Icon name={st.icon as 'CheckCircle'} size={12} />
-                    {st.label}
+                  <div className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                    {items.map(i => i.name || i.product_name || '').filter(Boolean).join(', ')}
                   </div>
-                </div>
-                <div className="text-sm mb-3" style={{ color: 'rgba(255,255,255,0.55)' }}>
-                  {order.items.join(', ')}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="font-bold" style={{ color: '#00C9A7' }}>{order.total.toLocaleString()}₽</span>
-                  <div className="flex gap-2">
-                    <button className="text-xs px-3 py-1.5 rounded-lg transition-all hover:bg-white/10" style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                      Детали
-                    </button>
-                    {order.status === 'delivered' && (
-                      <button className="text-xs px-3 py-1.5 rounded-lg transition-all" style={{ background: 'rgba(0,200,167,0.1)', color: '#00C9A7', border: '1px solid rgba(0,200,167,0.2)' }}>
-                        Оставить отзыв
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold" style={{ color: '#00C9A7' }}>{Number(order.total).toLocaleString()}₽</span>
+                    <div className="flex gap-2">
+                      <button className="text-xs px-3 py-1.5 rounded-lg transition-all hover:bg-white/10" style={{ color: 'rgba(255,255,255,0.5)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                        Детали
                       </button>
-                    )}
+                      {status === 'delivered' && (
+                        <button className="text-xs px-3 py-1.5 rounded-lg transition-all" style={{ background: 'rgba(0,200,167,0.1)', color: '#00C9A7', border: '1px solid rgba(0,200,167,0.2)' }}>
+                          Оставить отзыв
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       )}
 

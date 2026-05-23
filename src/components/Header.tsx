@@ -21,7 +21,7 @@ export default function Header() {
       <div className="border-b" style={{ borderColor: 'rgba(255,255,255,0.05)', background: 'rgba(0,0,0,0.2)' }}>
         <div className="max-w-7xl mx-auto px-4 py-1.5 flex items-center justify-between text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
           <div className="flex items-center gap-4">
-            <span>🇬🇪 Маркетплейс Абхазии</span>
+            <span>Маркетплейс Абхазии</span>
             <span className="hidden md:inline">Доставка по всем регионам</span>
           </div>
           <div className="flex items-center gap-4">

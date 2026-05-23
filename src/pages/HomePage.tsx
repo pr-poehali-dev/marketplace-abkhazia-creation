@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { products, categories } from '@/data/products';
+import { api } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import Icon from '@/components/ui/icon';
 
@@ -28,10 +28,35 @@ const heroSlides = [
   },
 ];
 
+const mapProduct = (p: Record<string, unknown>) => ({
+  id: p.id as number,
+  name: p.name as string,
+  price: Number(p.price),
+  oldPrice: p.old_price ? Number(p.old_price) : undefined,
+  rating: Number(p.rating),
+  reviews: p.reviews_count as number,
+  category: p.category_slug as string,
+  seller: (p.seller_name as string) || '',
+  sellerId: p.seller_id as number,
+  image: p.image_url as string,
+  badge: p.badge as string | undefined,
+  badgeType: p.badge_type as 'green' | 'orange' | 'gold' | undefined,
+  region: p.region as string,
+  inStock: p.in_stock as boolean,
+  description: (p.description as string) || '',
+  tags: (p.tags as string[]) || [],
+});
+
+type MappedProduct = ReturnType<typeof mapProduct>;
+type ApiCategory = { id: string; slug?: string; name: string; icon: string; sort_order?: number };
+
 export default function HomePage() {
   const { setPage, setSelectedCategory } = useStore();
   const [currentSlide, setCurrentSlide] = useState(0);
   const [animating, setAnimating] = useState(false);
+  const [products, setProducts] = useState<MappedProduct[]>([]);
+  const [categories, setCategories] = useState<ApiCategory[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -44,13 +69,23 @@ export default function HomePage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    Promise.all([api.getProducts(), api.getCategories()])
+      .then(([prodData, catData]) => {
+        const prods = Array.isArray(prodData) ? prodData : (prodData.products || []);
+        const cats = Array.isArray(catData) ? catData : (catData.categories || []);
+        setProducts(prods.map(mapProduct));
+        setCategories(cats);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
   const slide = heroSlides[currentSlide];
   const featuredProducts = products.slice(0, 8);
-  const newProducts = products.filter(p => p.badge === 'Новинка' || !p.badge).slice(0, 4);
-  const hotProducts = products.filter(p => p.badge && p.badge.includes('%')).slice(0, 4);
+  const hotProducts = products.filter((p: MappedProduct) => p.badge && p.badge.includes('%')).slice(0, 4);
 
-  const handleCategoryClick = (catId: string) => {
-    setSelectedCategory(catId);
+  const handleCategoryClick = (catSlug: string) => {
+    setSelectedCategory(catSlug);
     setPage('catalog');
   };
 
@@ -153,25 +188,28 @@ export default function HomePage() {
             Все категории <Icon name="ChevronRight" size={16} />
           </button>
         </div>
-        <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
-          {categories.map((cat, i) => (
-            <button
-              key={cat.id}
-              onClick={() => handleCategoryClick(cat.id)}
-              className="flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-300 hover:scale-105 animate-fade-in animate-opacity-0"
-              style={{
-                background: 'rgba(13,33,55,0.8)',
-                border: '1px solid rgba(255,255,255,0.06)',
-                animationDelay: `${i * 0.05}s`,
-                animationFillMode: 'forwards',
-              }}
-            >
-              <span className="text-2xl">{cat.icon}</span>
-              <span className="text-xs text-center font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.7)' }}>{cat.name}</span>
-              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>{cat.count}</span>
-            </button>
-          ))}
-        </div>
+        {loading ? (
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+        ) : (
+          <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
+            {categories.map((cat: ApiCategory, i: number) => (
+              <button
+                key={cat.id}
+                onClick={() => handleCategoryClick(cat.slug || cat.id)}
+                className="flex flex-col items-center gap-2 p-3 rounded-2xl transition-all duration-300 hover:scale-105 animate-fade-in animate-opacity-0"
+                style={{
+                  background: 'rgba(13,33,55,0.8)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  animationDelay: `${i * 0.05}s`,
+                  animationFillMode: 'forwards',
+                }}
+              >
+                <span className="text-2xl">{cat.icon}</span>
+                <span className="text-xs text-center font-medium leading-tight" style={{ color: 'rgba(255,255,255,0.7)' }}>{cat.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* BANNER — Доставка */}
@@ -204,7 +242,7 @@ export default function HomePage() {
       </section>
 
       {/* HOT DEALS */}
-      {hotProducts.length > 0 && (
+      {!loading && hotProducts.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 mb-10">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-montserrat font-bold text-white text-2xl flex items-center gap-2">
@@ -215,7 +253,7 @@ export default function HomePage() {
             </button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {hotProducts.map((p) => <ProductCard key={p.id} product={p} />)}
+            {hotProducts.map((p: MappedProduct) => <ProductCard key={p.id} product={p} />)}
           </div>
         </section>
       )}
@@ -228,9 +266,13 @@ export default function HomePage() {
             Смотреть все <Icon name="ChevronRight" size={16} />
           </button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {featuredProducts.map((p) => <ProductCard key={p.id} product={p} />)}
-        </div>
+        {loading ? (
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {featuredProducts.map((p: MappedProduct) => <ProductCard key={p.id} product={p} />)}
+          </div>
+        )}
       </section>
 
       {/* BANNER — Стать продавцом */}

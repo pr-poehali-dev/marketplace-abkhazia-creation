@@ -1,14 +1,49 @@
+import { useState, useEffect } from 'react';
 import { useStore } from '@/store/useStore';
-import { sellers, products } from '@/data/products';
+import { api } from '@/lib/api';
 import Icon from '@/components/ui/icon';
+
+interface ApiSeller {
+  id: number;
+  name: string;
+  avatar: string;
+  description: string;
+  location: string;
+  phone?: string;
+  email?: string;
+  rating: number;
+  reviews_count: number;
+  products_count: number;
+  verified: boolean;
+  join_year: number;
+}
 
 export default function SellersPage() {
   const { setPage, setSelectedSellerId } = useStore();
+  const [sellers, setSellers] = useState<ApiSeller[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.getSellers()
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data.sellers || []);
+        setSellers(list as ApiSeller[]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const openSeller = (id: number) => {
     setSelectedSellerId(id);
     setPage('seller');
   };
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -40,16 +75,18 @@ export default function SellersPage() {
                   <h3 className="font-montserrat font-bold text-white">{seller.name}</h3>
                   {seller.verified && <span className="text-teal-400">✓</span>}
                 </div>
-                <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>📍 {seller.location} · с {seller.joinDate}</p>
+                <p className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.4)' }}>
+                  📍 {seller.location} · с {seller.join_year}
+                </p>
               </div>
             </div>
             <p className="text-sm mb-4 line-clamp-2" style={{ color: 'rgba(255,255,255,0.55)' }}>{seller.description}</p>
             <div className="flex items-center justify-between text-sm">
               <div className="flex items-center gap-1">
                 <span style={{ color: '#FFB800' }}>★ {seller.rating}</span>
-                <span style={{ color: 'rgba(255,255,255,0.3)' }}>({seller.reviews})</span>
+                <span style={{ color: 'rgba(255,255,255,0.3)' }}>({seller.reviews_count})</span>
               </div>
-              <span style={{ color: 'rgba(255,255,255,0.4)' }}>{seller.productsCount} товаров</span>
+              <span style={{ color: 'rgba(255,255,255,0.4)' }}>{seller.products_count} товаров</span>
             </div>
           </button>
         ))}
@@ -76,7 +113,7 @@ export default function SellersPage() {
             </div>
             <div className="text-right flex-shrink-0">
               <div style={{ color: '#FFB800' }}>★ {seller.rating}</div>
-              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{seller.productsCount} товаров</div>
+              <div className="text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.35)' }}>{seller.products_count} товаров</div>
             </div>
             <Icon name="ChevronRight" size={18} style={{ color: 'rgba(255,255,255,0.25)' }} />
           </button>

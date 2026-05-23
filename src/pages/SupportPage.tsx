@@ -1,6 +1,16 @@
 import { useState } from 'react';
-import { deliveryInfo } from '@/data/products';
 import Icon from '@/components/ui/icon';
+
+const deliveryRegions = [
+  { name: 'Сухум', time: '1-2 дня', price: 'Бесплатно от 2000₽' },
+  { name: 'Гудаута', time: '1-3 дня', price: '150₽' },
+  { name: 'Гагра', time: '2-3 дня', price: '200₽' },
+  { name: 'Гал', time: '2-4 дня', price: '250₽' },
+  { name: 'Очамчира', time: '2-4 дня', price: '250₽' },
+  { name: 'Новый Афон', time: '1-2 дня', price: '100₽' },
+  { name: 'Пицунда', time: '2-3 дня', price: '200₽' },
+  { name: 'Россия', time: '5-14 дней', price: 'от 500₽' },
+];
 
 const faqs = [
   { q: 'Как сделать заказ?', a: 'Выберите товар в каталоге, добавьте в корзину и оформите заказ. Понадобится указать адрес доставки и контактные данные.' },
@@ -119,7 +129,7 @@ export default function SupportPage() {
             <span>Срок</span>
             <span>Стоимость</span>
           </div>
-          {deliveryInfo.regions.map((r, i) => (
+          {deliveryRegions.map((r, i) => (
             <div key={r.name} className="grid grid-cols-3 px-5 py-3.5 text-sm" style={{ background: i % 2 === 0 ? 'rgba(13,33,55,0.8)' : 'rgba(13,33,55,0.5)', borderTop: '1px solid rgba(255,255,255,0.04)' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)' }}>📍 {r.name}</span>
               <span style={{ color: 'rgba(255,255,255,0.55)' }}>{r.time}</span>

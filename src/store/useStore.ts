@@ -39,6 +39,7 @@ interface StoreState {
   toggleBookmark: (productId: number) => void;
   setCartOpen: (open: boolean) => void;
   login: (email: string, password: string) => void;
+  setUser: (user: User | null) => void;
   logout: () => void;
   setSearchQuery: (q: string) => void;
   setSelectedCategory: (c: string) => void;
@@ -102,16 +103,8 @@ export const useStore = create<StoreState>((set, get) => ({
 
   setCartOpen: (open) => set({ isCartOpen: open }),
 
-  login: (email, _password) => set({
-    isLoggedIn: true,
-    user: {
-      id: 1,
-      name: 'Аслан Кварчия',
-      email,
-      phone: '+7 (940) 123-45-67',
-      avatar: '👤',
-    }
-  }),
+  login: (_email, _password) => set({}),
+  setUser: (user: User | null) => set({ isLoggedIn: !!user, user }),
 
   logout: () => set({ isLoggedIn: false, user: null }),
 

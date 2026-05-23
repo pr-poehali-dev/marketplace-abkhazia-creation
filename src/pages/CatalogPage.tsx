@@ -1,8 +1,29 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useStore } from '@/store/useStore';
-import { products, categories, regions } from '@/data/products';
+import { api } from '@/lib/api';
 import ProductCard from '@/components/ProductCard';
 import Icon from '@/components/ui/icon';
+
+const mapProduct = (p: Record<string, unknown>) => ({
+  id: p.id as number,
+  name: p.name as string,
+  price: Number(p.price),
+  oldPrice: p.old_price ? Number(p.old_price) : undefined,
+  rating: Number(p.rating),
+  reviews: p.reviews_count as number,
+  category: p.category_slug as string,
+  seller: (p.seller_name as string) || '',
+  sellerId: p.seller_id as number,
+  image: p.image_url as string,
+  badge: p.badge as string | undefined,
+  badgeType: p.badge_type as 'green' | 'orange' | 'gold' | undefined,
+  region: p.region as string,
+  inStock: p.in_stock as boolean,
+  description: (p.description as string) || '',
+  tags: (p.tags as string[]) || [],
+});
+
+const regions = ['Все регионы', 'Сухум', 'Гудаута', 'Гагра', 'Гал', 'Очамчира', 'Ткуарчал', 'Гулрыпш'];
 
 export default function CatalogPage() {
   const { selectedCategory, setSelectedCategory, selectedRegion, setSelectedRegion, searchQuery } = useStore();
@@ -10,6 +31,20 @@ export default function CatalogPage() {
   const [priceMin, setPriceMin] = useState('');
   const [priceMax, setPriceMax] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [products, setProducts] = useState<ReturnType<typeof mapProduct>[]>([]);
+  const [categories, setCategories] = useState<Record<string, unknown>[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    Promise.all([api.getProducts(), api.getCategories()])
+      .then(([prodData, catData]) => {
+        const prods = Array.isArray(prodData) ? prodData : (prodData.products || []);
+        const cats = Array.isArray(catData) ? catData : (catData.categories || []);
+        setProducts((prods as Record<string, unknown>[]).map(mapProduct));
+        setCategories(cats as Record<string, unknown>[]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   const filtered = useMemo(() => {
     let list = [...products];
@@ -18,7 +53,7 @@ export default function CatalogPage() {
     if (searchQuery) list = list.filter(p =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.seller.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
+      p.tags.some((t: string) => t.toLowerCase().includes(searchQuery.toLowerCase()))
     );
     if (priceMin) list = list.filter(p => p.price >= Number(priceMin));
     if (priceMax) list = list.filter(p => p.price <= Number(priceMax));
@@ -28,7 +63,7 @@ export default function CatalogPage() {
     else if (sortBy === 'rating') list.sort((a, b) => b.rating - a.rating);
 
     return list;
-  }, [selectedCategory, selectedRegion, searchQuery, priceMin, priceMax, sortBy]);
+  }, [products, selectedCategory, selectedRegion, searchQuery, priceMin, priceMax, sortBy]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -36,7 +71,9 @@ export default function CatalogPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="font-montserrat font-bold text-white text-2xl md:text-3xl">Каталог товаров</h1>
-          <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>Найдено {filtered.length} товаров</p>
+          <p className="text-sm mt-1" style={{ color: 'rgba(255,255,255,0.4)' }}>
+            {loading ? 'Загрузка...' : `Найдено ${filtered.length} товаров`}
+          </p>
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
@@ -77,17 +114,16 @@ export default function CatalogPage() {
                 </button>
                 {categories.map(cat => (
                   <button
-                    key={cat.id}
-                    onClick={() => setSelectedCategory(cat.id)}
+                    key={cat.id as string}
+                    onClick={() => setSelectedCategory((cat.slug || cat.id) as string)}
                     className="w-full text-left px-3 py-2 rounded-xl text-sm transition-all flex items-center justify-between"
                     style={{
-                      background: selectedCategory === cat.id ? 'rgba(0,200,167,0.12)' : 'transparent',
-                      color: selectedCategory === cat.id ? '#00C9A7' : 'rgba(255,255,255,0.55)',
-                      border: selectedCategory === cat.id ? '1px solid rgba(0,200,167,0.2)' : '1px solid transparent',
+                      background: selectedCategory === (cat.slug || cat.id) ? 'rgba(0,200,167,0.12)' : 'transparent',
+                      color: selectedCategory === (cat.slug || cat.id) ? '#00C9A7' : 'rgba(255,255,255,0.55)',
+                      border: selectedCategory === (cat.slug || cat.id) ? '1px solid rgba(0,200,167,0.2)' : '1px solid transparent',
                     }}
                   >
-                    <span>{cat.icon} {cat.name}</span>
-                    <span className="text-xs opacity-60">{cat.count}</span>
+                    <span>{cat.icon as string} {cat.name as string}</span>
                   </button>
                 ))}
               </div>
@@ -175,7 +211,11 @@ export default function CatalogPage() {
           </div>
 
           {/* Grid */}
-          {filtered.length > 0 ? (
+          {loading ? (
+            <div className="py-20 text-center">
+              <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>Загрузка...</p>
+            </div>
+          ) : filtered.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               {filtered.map((p, i) => (
                 <div key={p.id} className="animate-fade-in animate-opacity-0" style={{ animationDelay: `${i * 0.04}s`, animationFillMode: 'forwards' }}>
